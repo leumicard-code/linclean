@@ -1,104 +1,128 @@
-🧹 Linux Cleaner — Rust Native | 12 MiB, No Tank
+# 🧹 LinClean — Linux System Cleaner (GUI & CLI)
 
-    מנקה לינוקס קליל, Rust נייטיב, לא טנק רוסי כמו BleachBit. עושה עבודה אחת הכי טוב.
+[![Language: Rust](https://img.shields.io/badge/Language-Rust-orange.svg)](https://www.rust-lang.org/)
+[![GUI: wxDragon / wxWidgets](https://img.shields.io/badge/GUI-wxDragon%20%2F%20GTK3-blue.svg)](https://crates.io/crates/wxdragon)
+[![Platform: Linux](https://img.shields.io/badge/Platform-Linux-success.svg)](https://www.kernel.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](#license)
 
-✨ למה?
+**LinClean** is an ultra-fast, safe, BleachBit-style system cleaner for Linux written in **Rust**.  
+It provides both a **native desktop GUI** (powered by `wxdragon` / wxWidgets) and a **full-featured CLI**, scanning gigabytes of cache and junk files in milliseconds using multithreaded directory traversal.
 
-    12 MiB בינארי — כמו syseq (16.2 MiB), לא 200 MiB
-    0.1% CPU, 15 MiB RAM — דמון? לא צריך! רץ ונסגר
-    Rust נייטיב — No allocations, safe, לא Python
-    Mandriva / Fedora / Ubuntu / Arch — עובד על כולם
+![LinClean Desktop GUI](assets/screenshot.png)
 
-🔥 מה מנקה
+---
 
-✓ Package Cache      /var/cache/dnf, /var/cache/apt, pacman cache
-✓ Journal Logs       journalctl --vacuum-time=7d (לא מוחק הכל)
-✓ Temp               /tmp/*, /var/tmp/*
-✓ Thumbnails         ~/.cache/thumbnails — בונה מחדש אוטומטי
-✓ Trash              ~/.local/share/Trash/*
-✓ Browser Cache      Firefox, Chrome (רק cache, לא סיסמאות!)
-✓ Flatpak Unused     flatpak uninstall --unused
-✓ Snap Old           snap revisions ישנים
-✓ Orphaned Deps      dnf autoremove, apt autoremove
-✓ Core Dumps         /var/lib/systemd/coredump
+## ✨ Key Features
 
-🚀 התקנה
+- ⚡ **Blazingly Fast Parallel Engine** — Each cleanup category is scanned concurrently in its own scoped thread (`std::thread::scope`), scanning gigabytes of data in ~10 ms.
+- 🖥️ **Native Desktop GUI (`linclean-gui`)** — Clean two-column BleachBit-style interface using native GTK3/wxWidgets controls that blend seamlessly with KDE Breeze and GNOME themes.
+- 💻 **Powerful CLI (`linclean`)** — Scriptable command-line interface with `--dry-run`, category filtering, and plain-text report generation.
+- 🛡️ **Safety-First Design**:
+  - **Container-Safe Podman Cleanup**: Runs `podman image prune -f` to remove only dangling untagged images — **stopped containers and volumes are never touched**.
+  - **Protected `/tmp` & `/var/tmp` Scanner**: Automatically skips active runtime directories, sockets, symlinks, X11/Wayland locks, `systemd-private-*`, `podman-*`, `pipewire-*`, `ssh-*`, and `tmux-*`.
+  - **Preview Before Delete**: Inspect every file and reclaimable byte before confirming deletion.
 
-# Cargo
-cargo install linux-cleaner
-# או AppImage / RPM / DEB
-./linux-cleaner --help
+---
 
-📦 שימוש
+## 📦 Cleanup Categories
 
-# סריקה בלבד — לא מוחק
-linux-cleaner --scan
-# ניקוי בטוח — רק מה שבטוח
-linux-cleaner --safe
-# ניקוי עמוק — עם אישור
-linux-cleaner --deep
-# אוטומטי — כמו syseq daemon, רץ ברקע פעם בשבוע
-linux-cleaner --daemon --schedule weekly
-# KDE SYSTRAY — כמו System EQ
-linux-cleaner --tray
+| ID | Category | Target Locations / Command | Type |
+| :--- | :--- | :--- | :--- |
+| `browsers` | **Browser Cache** | Firefox (`cache2`), Google Chrome & Chromium caches | File scan |
+| `dnf` | **DNF Package Cache** | `/var/cache/dnf`, `/var/cache/yum` | File scan |
+| `tmp` | **Temporary Files** | `/tmp`, `/var/tmp` (age-filtered, active runtime sockets excluded) | File scan |
+| `logs` | **Rotated System Logs** | `/var/log` rotated archives (`.gz`, `.old`, `.log.1`, etc.) | File scan |
+| `thumbnails` | **Thumbnail Cache** | `~/.cache/thumbnails` | File scan |
+| `trash` | **Trash Bin** | `~/.local/share/Trash/files` & `info` | File scan |
+| `podman` | **Podman (Safe Prune)** | `~/.cache/containers` + `podman image prune -f` | File + Command |
+| `flatpak` | **Flatpak Unused & Cache** | `~/.cache/flatpak`, `~/.var/app/*/cache` + `flatpak uninstall --unused -y` | File + Command |
+| `journal` | **Systemd Journal** | `journalctl --vacuum-time=7d` *(requires root)* | Command |
 
-📊 דוגמת פלט
+---
 
-🧹 Linux Cleaner — Rust Native
-Scanning: Mandriva 2026...
-[✓] DNF Cache:           1.2 GiB — /var/cache/dnf
-[✓] Journal Logs:        890 MiB — 30 ימים
-[✓] Thumbnails:          420 MiB — ~/.cache/thumbnails
-[✓] Flatpak Unused:      650 MiB
-[✓] Trash:               210 MiB
-סה"כ לניקוי: 3.37 GiB
-לנקות? (y/N): y
-→ Cleaning...
-✓ 3.37 GiB שוחררו! 0.3s, 15 MiB RAM
+## 🏗️ Architecture
 
-🧠 איך זה עובד — קוד איכותי
+The codebase is intentionally small, flat, and easy to read:
 
-// לא מוחק סתם!
-const SAFE_PATHS: &[&str] = &[
-    "/var/cache/dnf",
-    "/tmp/*",
-];
-fn clean_journal() {
-    // רק 7 ימים אחורה, לא הכל!
-    Command::new("journalctl")
-        .args(["--vacuum-time=7d"])
-        .status();
-}
-// Atomic — כמו config.rs שלך עם tmp.rename!
-fn safe_delete(path: Path) {
-    let tmp = path.with_extension("tmp.del");
-    rename(path, tmp);
-    remove(tmp); // אם נכשל, לא נמחק
-}
+```text
+linclean/
+├── Cargo.toml       # Defines both `linclean` (CLI) and `linclean-gui` (GUI) binaries
+└── src/
+    ├── engine.rs    # Parallel scanning engine, safe /tmp filter, deletion & report builder
+    ├── gui.rs       # Native wxDragon GUI organized in top-to-bottom section builders
+    └── main.rs      # Clap-based CLI interface
+```
 
-    No allocations in hot path — כמו processor.rs עם No allocations
-    Atomic delete — כמו config.rs עם tmp.rename
-    Tests — flat_is_transparent style, בודק שלא מוחק ~/.config
+---
 
-🆚 vs BleachBit / Stacer
-	Linux Cleaner	BleachBit	Stacer
-Size	12 MiB	120 MiB	80 MiB
-RAM	15 MiB	180 MiB	150 MiB
-Language	Rust	Python	Electron
-Speed	0.3s	8s	5s
-SYSTRAY	KDE native	GTK	—
-💡 למה שווה כסף?
+## 🚀 Building from Source
 
-    כל משתמש לינוקס צריך! כמו System EQ — משפר פלאים!
-    Fedora #showcase — "12 MiB cleaner, not a tank!"
-    קליל כמו syseq — 16.2 MiB binary, 60 MiB RAM
+### Prerequisites (Ubuntu / Debian)
+```bash
+sudo apt-get install build-essential cmake ninja-build pkg-config \
+    libgtk-3-dev libjpeg-dev libtiff-dev clang libclang-dev
+```
 
-🔧 Roadmap
+### Build Release Binaries
+```bash
+cargo build --release
+```
 
-    per-device profiles — כמו syseq עם פרופיל לאוזניות 20₪
-    Tray-first — קליק ב-KDE SYSTRAY
-    Auto headroom — לא מוחק יותר מדי
+This produces two optimized binaries in `target/release/`:
+- `target/release/linclean-gui` — Native graphical application
+- `target/release/linclean` — Command-line utility
 
-Built with Rust • 12 MiB • 15 MiB RAM • No Tank
-One software does one job best — like syseq
-RUST eats everything, CLEAN eats trash
+---
+
+## 📖 Usage
+
+### 1. Graphical Interface (GUI)
+```bash
+./target/release/linclean-gui
+```
+1. Select the desired cleanup categories in the left panel.
+2. Click **Preview Scan** to inspect all matching paths and total reclaimable space.
+3. Click **Clean Now** and confirm the native dialog to permanently remove the selected items.
+4. Click **Save Report** at any time to export a timestamped summary to `~/linclean_report_YYYYMMDD_HHMMSS.txt`.
+
+### 2. Command-Line Interface (CLI)
+
+List all available categories:
+```bash
+linclean list
+```
+
+Scan all categories in parallel (no files deleted):
+```bash
+linclean scan
+```
+
+Scan specific categories only:
+```bash
+linclean scan --categories browsers,thumbnails,trash,flatpak
+```
+
+Dry-run cleanup (preview what would be deleted):
+```bash
+linclean clean --dry-run
+```
+
+Perform cleanup interactively:
+```bash
+linclean clean
+```
+
+Generate and save a detailed text report to `~/`:
+```bash
+linclean report
+```
+
+---
+
+## 👤 Author
+
+**Shay Kadosh** — System Architect & Lead Developer
+
+## 📄 License
+
+This project is open-source software licensed under the [MIT License](LICENSE).
